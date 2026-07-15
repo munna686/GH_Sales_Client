@@ -1,0 +1,30 @@
+/* You can add global styles to this file, and also import other style files */
+@use './tailwind.css';
+@use './layout/layout.scss';
+@use 'primeicons/primeicons.css';
+@use './demo/demo.scss';
+
+/* Auto zoom for smaller monitors/screens */
+@media screen and (max-width: 1366px) {
+    body {
+        zoom: 0.9;
+        -moz-transform: scale(0.9);
+        -moz-transform-origin: 0 0;
+    }
+}
+
+/* Optional: Even smaller zoom for very small screens */
+@media screen and (max-width: 1024px) {
+    body {
+        zoom: 0.85;
+        -moz-transform: scale(0.85);
+        -moz-transform-origin: 0 0;
+    }
+}
+
+/* Ensure SweetAlert2 overlays appear above PrimeNG dialogs */
+.swal2-container {
+    z-index: 20000 !important;
+}
+
+

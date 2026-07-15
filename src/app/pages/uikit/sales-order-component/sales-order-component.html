@@ -1,0 +1,639 @@
+<div class="card">
+  <p-toast />
+
+  <div class="mx-auto w-full max-w-none simple-card">
+    <div class="mb-4">
+      <p-toolbar styleClass="sales-topbar border-0 bg-transparent p-0">
+        <ng-template #start>
+          <p-iconfield iconPosition="left" styleClass="topbar-search left-search">
+            <p-inputicon>
+              <i class="pi pi-search"></i>
+            </p-inputicon>
+            <input
+              pInputText
+              type="text"
+              placeholder="Search Order"
+              [ngModel]="pendingSearchText()"
+              (ngModelChange)="onSearchChange($event)"
+              (keydown.enter)="executeSearch()"
+              (blur)="executeSearch()"
+            />
+          </p-iconfield>
+        </ng-template>
+        <ng-template #center>
+          <div class="topbar-title">
+            <span class="text-2xl font-bold tracking-tight">Sales Orders</span>
+          </div>
+        </ng-template>
+        <ng-template #end>
+          <div class="topbar-controls flex items-center gap-2">
+            @if((userPrivilege.isNew == true || isAdminPrivilegeUser()) && selectedViewMode === 'Draft') {
+              <p-button label="Create" icon="pi pi-plus" severity="primary" (click)="onCreateOrder()" />
+            }
+            <p-button label="Export" icon="pi pi-file-excel" severity="success" [outlined]="true" (click)="exportOrdersToExcel()" />
+            <p-button label="Refresh" icon="pi pi-refresh" severity="secondary" [outlined]="true" (click)="loadSalesOrders(pageNumber)" />
+            <p-select [options]="ViewModes | keyvalue" optionLabel="value" optionValue="value" placeholder="Select View Mode"
+               appendTo="body" [(ngModel)]="selectedViewMode" (onChange)="onViewModeChange()"></p-select>
+          </div>
+        </ng-template>
+      </p-toolbar>
+    </div>
+
+    <div class="overflow-hidden rounded-2xl border border-surface-200 bg-surface-0 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+
+      <p-table
+        [value]="filteredSalesOrders()"
+        [rows]="pageSize"
+        [totalRecords]="totalRecords"
+        [paginator]="true"
+        [alwaysShowPaginator]="true"
+        [showFirstLastIcon]="true"
+        [showPageLinks]="true"
+        [showCurrentPageReport]="true"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords} orders"
+        [loading]="loading()"
+        [rowsPerPageOptions]="[5, 10, 15]"
+        [lazy]="true"
+        [paginatorDropdownAppendTo]="'body'"
+        paginatorDropdownScrollHeight="240px"
+        (onPage)="onPageChange($event)"
+        [lazyLoadOnInit]="false"
+        stripedRows 
+        [tableStyle]="{ 'min-width': '50rem' }"
+        responsiveLayout="scroll"
+        styleClass="p-datatable-sm"
+      >
+        <ng-template pTemplate="header">
+          <tr>
+            <th>Order</th>
+            <th>Date</th>
+            <th>Depot</th>
+            <th>Customer</th>
+            <th>Officer</th>
+            <th>Mode</th>
+            <th class="text-right">Amount</th>
+            <th class="text-right">Credit Balance</th>
+            <th class="text-right">Credit Limit</th>
+            <th class="text-right">Action</th>
+          </tr>
+        </ng-template>
+
+        <ng-template pTemplate="body" let-order>
+          <tr>
+            <td style="min-width: 9rem">
+              <div class="font-semibold text-primary">{{ order.orderRefNo }}</div>
+            </td>
+            <td>
+              <div>{{ formatDate(order.orderDate) }}</div>
+              <div class="text-xs text-surface-500">Delivery: {{ formatDate(order.exptDlvDate) }}</div>
+            </td>
+            <td>{{ order.depotName }}</td>
+            <td style="max-width: 20rem">
+              <div class="font-medium">{{ order.customerName }}</div>
+              <div class="line-clamp-1  text-surface-500">{{ order.locationName }}</div>
+            </td>
+            <td>{{ order.salesOfficer }}</td>
+            <td>
+              <p-tag [value]="order.transMode" [severity]="getTransModeSeverity(order.transMode)" />
+            </td>
+            <td class="text-right font-semibold">{{ formatCurrency(order.orderAmt) }}</td>
+            <td class="text-right">
+              <div class="font-medium">{{ formatCurrency(order.creditBalance) }}</div>
+            </td>
+            <td class="text-right">
+              <div class="font-medium">{{ formatCurrency(order.creditLimitAmt) }}</div>
+              <div class=" text-surface-500">Used: {{ order.creditDays }} days</div>
+            </td>
+            <td>
+              <div class="flex items-center justify-end gap-2">
+                <p-button
+                  icon="pi pi-eye"
+                  [rounded]="true"
+                  [text]="true"
+                  severity="info"
+                  (click)="viewOrderDetails(order)"
+                  pTooltip="View details"
+                  tooltipPosition="top"
+                />
+
+              
+
+                <p-button
+                  *ngIf="selectedViewMode === 'Draft' && canCheckAction()"
+                  icon="pi pi-check"
+                  [rounded]="true"
+                  [text]="true"
+                  severity="primary"
+                  (click)="onWorkflowActionFromList(order, 'check')"
+                  pTooltip="Check"
+                  tooltipPosition="top"
+                />
+
+                <p-button
+                  *ngIf="selectedViewMode === 'Draft' && canApproveAction()"
+                  icon="pi pi-check-circle"
+                  [rounded]="true"
+                  [text]="true"
+                  severity="primary"
+                  (click)="onWorkflowActionFromList(order, 'approve')"
+                  pTooltip="Approve"
+                  tooltipPosition="top"
+                />
+
+                <p-button
+                  *ngIf="selectedViewMode === 'Workflow' && canRevertAction()"
+                  icon="pi pi-refresh"
+                  [rounded]="true"
+                  [text]="true"
+                  severity="secondary"
+                  (click)="onWorkflowActionFromList(order, 'revert')"
+                  pTooltip="Revert"
+                  tooltipPosition="top"
+                />
+
+                <p-button
+                  *ngIf="selectedViewMode === 'Draft' && (userPrivilege.isEdit == true || isAdminPrivilegeUser())"
+                  icon="pi pi-pencil"
+                  [rounded]="true"
+                  [text]="true"
+                  severity="secondary"
+                  (click)="onEditOrder(order)"
+                  pTooltip="Edit"
+                  tooltipPosition="top"
+                />
+
+                <p-button
+                  *ngIf="selectedViewMode === 'Draft' && (userPrivilege.isEdit == true )"
+                  icon="pi pi-send"
+                  [rounded]="true"
+                  [text]="true"
+                  severity="primary"
+                  (click)="onForwardOrder(order)"
+                  pTooltip="Forward"
+                  tooltipPosition="top"
+                />
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+
+        <ng-template pTemplate="emptymessage">
+          <tr>
+            <td colspan="9" class="py-10 text-center text-surface-500 dark:text-surface-400">
+              No sales orders found.
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </div>
+  </div>
+
+  <p-dialog [(visible)]="displayDetailDialog" [modal]="true" appendTo="body" [(maximized)]="detailDialogMaximized"
+    [style]="detailDialogMaximized 
+          ? { width: '100vw', height: '100vh' } 
+          : { width: '94vw', maxWidth: '1200px', height: 'auto' }" [contentStyle]="detailDialogMaximized 
+          ? { height: 'calc(100vh - 9.5rem)', overflow: 'auto' } 
+          : { maxHeight: '88vh', overflow: 'auto' }" [closable]="true" [maximizable]="true" [draggable]="false"
+    [resizable]="false" (onHide)="closeDetailDialog()" styleClass="rounded-3xl shadow-2xl">
+  
+    <!-- Header -->
+    <ng-template pTemplate="header">
+      <div class="flex items-center justify-between w-full px-2">
+        <div class="flex items-center gap-3">
+          <i class="pi pi-file-edit text-3xl text-primary"></i>
+          <div>
+            <span class="text-xl font-semibold tracking-tight">
+              {{ selectedOrder()?.orderRefNo || 'Order Details' }}
+            </span>
+            <p-tag *ngIf="selectedOrder()" [value]="selectedOrder()!.transMode"
+              [severity]="getTransModeSeverity(selectedOrder()!.transMode)" class="ml-4" />
+          </div>
+        </div>
+      </div>
+    </ng-template>
+  
+    <div *ngIf="selectedOrder() as order" class="px-6 py-4 space-y-8">
+  
+      <!-- Summary Info -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        <div class="flex gap-4">
+          <i class="pi pi-user text-2xl text-surface-400 mt-1"></i>
+          <div>
+            <div class="text-xs uppercase tracking-widest text-surface-500">Customer</div>
+            <div class="font-semibold mt-1 leading-tight">{{ order.customerName }}</div>
+            <div class="text-xs text-surface-500 mt-1">{{ order.custRegCode || order.customerCode }}</div>
+          </div>
+        </div>
+  
+        <div class="flex gap-4">
+          <i class="pi pi-map-marker text-2xl text-surface-400 mt-1"></i>
+          <div>
+            <div class="text-xs uppercase tracking-widest text-surface-500">Location</div>
+            <div class="font-semibold mt-1 leading-tight">{{ order.locationName }}</div>
+          </div>
+        </div>
+  
+        <div class="flex gap-4">
+          <i class="pi pi-calendar text-2xl text-surface-400 mt-1"></i>
+          <div>
+            <div class="text-xs uppercase tracking-widest text-surface-500">Order Date</div>
+            <div class="font-semibold mt-1">{{ formatDate(order.orderDate) }}</div>
+          </div>
+        </div>
+  
+        <div class="flex gap-4">
+          <i class="pi pi-truck text-2xl text-surface-400 mt-1"></i>
+          <div>
+            <div class="text-xs uppercase tracking-widest text-surface-500">Delivery</div>
+            <div class="font-semibold mt-1">{{ formatDate(order.exptDlvDate) }}</div>
+          </div>
+        </div>
+  
+        <div class="flex gap-4">
+          <i class="pi pi-id-card text-2xl text-surface-400 mt-1"></i>
+          <div>
+            <div class="text-xs uppercase tracking-widest text-surface-500">Officer</div>
+            <div class="font-semibold mt-1">{{ order.salesOfficer }}</div>
+          </div>
+        </div>
+      </div>
+  
+      <!-- Key Stats -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-5">
+        <div class="bg-surface-50 dark:bg-surface-900 rounded-2xl p-6 border border-surface-100 dark:border-surface-700">
+          <div class="text-surface-500 text-sm">Order Amount</div>
+          <div class="text-3xl font-semibold text-primary mt-2">{{ formatCurrency(order.orderAmt) }}</div>
+        </div>
+        <div class="bg-surface-50 dark:bg-surface-900 rounded-2xl p-6 border border-surface-100 dark:border-surface-700">
+          <div class="text-surface-500 text-sm">VAT</div>
+          <div class="text-3xl font-semibold text-orange-500 mt-2">{{ formatCurrency(order.vatAmt) }}</div>
+        </div>
+        <div class="bg-surface-50 dark:bg-surface-900 rounded-2xl p-6 border border-surface-100 dark:border-surface-700">
+          <div class="text-surface-500 text-sm">Credit Balance</div>
+          <div class="text-3xl font-semibold text-green-500 mt-2">{{ formatCurrency(order.creditBalance) }}</div>
+        </div>
+        <div class="bg-surface-50 dark:bg-surface-900 rounded-2xl p-6 border border-surface-100 dark:border-surface-700">
+          <div class="text-surface-500 text-sm">Total Items</div>
+          <div class="text-3xl font-semibold text-cyan-500 mt-2">{{ detailTotalQuantity() }}</div>
+        </div>
+      </div>
+
+      <!-- Workflow History -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div class="bg-surface-50 dark:bg-surface-900 rounded-2xl p-6 border border-surface-100 dark:border-surface-700">
+          <div class="text-surface-500 text-sm">Entry</div>
+          <div class="font-semibold mt-2">{{ order.entryBy || '-' }}</div>
+          <div class="text-sm text-surface-500 mt-1">{{ formatDateTime(order.entryDate) || '-' }}</div>
+        </div>
+        <div class="bg-surface-50 dark:bg-surface-900 rounded-2xl p-6 border border-surface-100 dark:border-surface-700">
+          <div class="text-surface-500 text-sm">Check</div>
+          <div class="font-semibold mt-2">{{ order.checkBy || '-' }}</div>
+          <div class="text-sm text-surface-500 mt-1">{{ formatDateTime(order.checkDate) || '-' }}</div>
+        </div>
+        <div class="bg-surface-50 dark:bg-surface-900 rounded-2xl p-6 border border-surface-100 dark:border-surface-700">
+          <div class="text-surface-500 text-sm">Approve</div>
+          <div class="font-semibold mt-2">{{ order.approveBy || '-' }}</div>
+          <div class="text-sm text-surface-500 mt-1">{{ formatDateTime(order.approveDate) || '-' }}</div>
+        </div>
+      </div>
+  
+      <p-divider />
+  
+      <!-- Items Table -->
+      <div>
+        <div class="flex justify-between items-center mb-4">
+          <span class="font-semibold text-lg">Order Items</span>
+          <span class="text-surface-500">{{ salesOrderDetails().length }} items</span>
+        </div>
+  
+        <div class="border border-surface-200 dark:border-surface-700 rounded-2xl overflow-hidden">
+          <p-table *ngIf="!selectedDetailLoading()" [value]="salesOrderDetails()" styleClass="p-datatable-sm"
+            responsiveLayout="scroll" [rowHover]="true">
+            <ng-template pTemplate="header">
+              <tr>
+                <th>Product Code</th>
+                <th>Product Name</th>
+                <th>Pack Size</th>
+                <th class="text-center">Order Qty</th>
+                <th class="text-center">Stock Qty</th>
+                <th class="text-right">Trade Price</th>
+                <th class="text-right">Discount</th>
+                <th class="text-right">Amount</th>
+              </tr>
+            </ng-template>
+  
+            <ng-template pTemplate="body" let-item>
+              <tr>
+                <td>
+                  <span class="font-mono text-xs bg-surface-100 dark:bg-surface-800 px-3 py-1.5 rounded-lg">
+                    {{ item.productCode }}
+                  </span>
+                </td>
+                <td class="font-medium">{{ item.productName }}</td>
+                <td><p-tag [value]="item.packSize" severity="secondary" /></td>
+                <td class="text-center">
+                  <span
+                    class="bg-primary-100 text-primary-700 dark:bg-primary-950 dark:text-primary-300 px-4 py-1 rounded-full text-sm font-semibold">
+                    {{ item.orderQty }}
+                  </span>
+                </td>
+                <td class="text-center">
+                  <span [ngClass]="item.stockQty >= item.orderQty ? 
+                    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300' : 
+                    'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'"
+                    class="px-4 py-1 rounded-full text-sm font-semibold">
+                    {{ item.stockQty }}
+                  </span>
+                </td>
+                <td class="text-right">{{ formatCurrency(item.tradePrice) }}</td>
+                <td class="text-right text-red-500">
+                  <span *ngIf="item.discAmt > 0">-{{ formatCurrency(item.discAmt) }}</span>
+                  <span *ngIf="item.discAmt === 0" class="text-surface-400">—</span>
+                </td>
+                <td class="text-right font-semibold text-primary">{{ formatCurrency(item.orderAmt) }}</td>
+              </tr>
+            </ng-template>
+  
+            <ng-template pTemplate="footer">
+              <tr class="font-semibold bg-surface-50 dark:bg-surface-900">
+                <td colspan="3" class="text-right">Total</td>
+                <td class="text-center">{{ detailTotalQuantity() }}</td>
+                <td></td>
+                <td></td>
+                <td class="text-right text-red-500">
+                  <span *ngIf="detailTotalDiscount() > 0">-{{ formatCurrency(detailTotalDiscount()) }}</span>
+                </td>
+                <td class="text-right text-xl text-primary">{{ formatCurrency(order.orderAmt) }}</td>
+              </tr>
+            </ng-template>
+          </p-table>
+  
+          <div *ngIf="selectedDetailLoading()" class="py-20 text-center">
+            <i class="pi pi-spinner pi-spin text-3xl mb-3 text-surface-400"></i>
+            <p class="text-surface-500">Loading order items...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  
+    <!-- Footer -->
+    <ng-template pTemplate="footer">
+      <div class="flex items-center justify-between w-full">
+        <div class="flex items-center gap-2">
+          <p-button *ngIf="canForwardAction() && selectedViewMode === 'Draft'" label="Forward" icon="pi pi-send" severity="primary" [outlined]="true" (click)="confirmWorkflowAction('forward')" />
+          <p-button *ngIf="canCheckAction() && selectedViewMode === 'Draft'" label="Check" icon="pi pi-check" severity="primary" [outlined]="true" (click)="confirmWorkflowAction('check')" />
+          <p-button *ngIf="canApproveAction() && selectedViewMode === 'Draft'" label="Approve" icon="pi pi-check-circle" severity="primary" [outlined]="true" (click)="confirmWorkflowAction('approve')" />
+          <p-button *ngIf="canRevertAction() && selectedViewMode === 'Workflow'" label="Revert" icon="pi pi-refresh" severity="primary" [outlined]="true" (click)="confirmWorkflowAction('revert')" />
+        </div>
+        <p-button label="Close" icon="pi pi-times" severity="secondary" [outlined]="true" (click)="closeDetailDialog()" />
+      </div>
+    </ng-template>
+  </p-dialog>
+
+  <p-dialog
+    [(visible)]="isCreateDialogVisible"
+    [header]="getDialogHeader()"
+    modal
+    appendTo="body"
+    [(maximized)]="createDialogMaximized"
+    styleClass="create-order-dialog"
+    [style]="createDialogMaximized ? { width: '100vw', height: '100vh' } : { width: '1100px', maxWidth: '94vw' }"
+    [contentStyle]="createDialogMaximized ? { height: 'calc(100vh - 9.5rem)', overflow: 'auto' } : { maxHeight: '88vh', overflow: 'auto' }"
+    [closable]="true"
+    [maximizable]="true"
+    (onHide)="onHideCreateDialog()">
+
+    <form [formGroup]="formGroup" class="create-order-form space-y-5">
+      <div class="create-order-section">
+        <hr />
+        <div class="grid grid-cols-12 gap-4">
+        <!-- Customer -> Customer Location -> Depot -> Credit Balance (same row) -->
+        <div class="col-span-12 md:col-span-4 mb-3">
+          <p-floatLabel variant="on">
+            <p-select
+              inputId="customerId"
+              formControlName="customerId"
+              [options]="customers()"
+              optionLabel="display"
+              optionValue="customerId"
+              [filter]="true"
+              filterBy="display"
+              (onChange)="onCustomerChange($event.value)"
+              appendTo="body"
+              fluid
+            />
+            <label for="customerId">Customer</label>
+          </p-floatLabel>
+        </div>
+
+        <div class="col-span-12 md:col-span-4">
+          <p-floatLabel variant="on">
+            <p-select
+              inputId="customerLocationId"
+              formControlName="customerLocationId"
+              [options]="customerLocations()"
+              optionLabel="display"
+              optionValue="locationId"
+              [filter]="true"
+              filterBy="display"
+              (onChange)="onLocationChange($event.value)"
+              appendTo="body"
+              fluid
+            />
+            <label for="customerLocationId">Customer Location</label>
+          </p-floatLabel>
+        </div>
+
+        <div class="col-span-12 md:col-span-2">
+          <p-floatLabel variant="on">
+            <p-select
+              inputId="depotId"
+              formControlName="depotId"
+              [options]="depots()"
+              optionLabel="display"
+              optionValue="depotId"
+              [filter]="true"
+              filterBy="display"
+              appendTo="body"
+              fluid
+            />
+            <label for="depotId">Depot</label>
+          </p-floatLabel>
+        </div>
+
+        <div class="col-span-12 md:col-span-2">
+          <p-floatLabel variant="on">
+            <input
+              pInputText
+              id="creditBalance"
+              [value]="selectedCreditBalance() !== null ? formatCurrency(selectedCreditBalance()!) : ''"
+              readonly
+              class="w-full"
+              placeholder="-"
+            />
+            <label for="creditBalance">Credit Balance</label>
+          </p-floatLabel>
+        </div>
+
+        <!-- Order Date -> Expected Delivery Date -> PO Number (same row) -->
+        <div class="col-span-12 md:col-span-4">
+          <p-floatLabel variant="on">
+            <p-datepicker
+              inputId="orderDate"
+              formControlName="orderDate"
+              [showIcon]="true"
+              [minDate]="checkDate ? orderDateMin : null"
+              [maxDate]="checkDate ? orderDateMax : null"
+              fluid
+            />
+            <label for="orderDate">Order Date</label>
+          </p-floatLabel>
+        </div>
+
+        <div class="col-span-12 md:col-span-4">
+          <p-floatLabel variant="on">
+            <p-datepicker
+              inputId="expDeliveryDate"
+              formControlName="expDeliveryDate"
+              [showIcon]="true"
+              fluid
+            />
+            <label for="expDeliveryDate">Expected Delivery Date</label>
+          </p-floatLabel>
+        </div>
+
+        <div class="col-span-12 md:col-span-4">
+          <p-floatLabel variant="on">
+            <input pInputText id="poNumber" formControlName="poNumber" class="w-full" />
+            <label for="poNumber">PO Number</label>
+          </p-floatLabel>
+        </div>
+
+        <!-- Remarks (textarea on its own row) -->
+        <div class="col-span-12">
+          <p-floatLabel variant="on">
+            <textarea pTextarea id="remarks" formControlName="remarks" rows="3" class="w-full" fluid></textarea>
+            <label for="remarks">Remarks</label>
+          </p-floatLabel>
+        </div>
+      </div>
+
+      </div>
+
+      <p-divider />
+
+      <div class="create-order-section" formArrayName="items">
+        <div class="create-order-section-header mb-3 flex items-center justify-between">
+          <p-button
+            label="Add Product"
+            icon="pi pi-plus"
+            severity="primary"
+            (click)="addItemRow()"
+            [disabled]="!canAddItemRow()"
+          />
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-surface-200 bg-surface-0 dark:border-surface-800 dark:bg-surface-900">
+          <table class="w-full min-w-[900px] text-sm">
+            <thead class="bg-surface-50 text-surface-600 dark:bg-surface-900 dark:text-surface-300">
+              <tr>
+                <th class="px-3 py-2 text-left font-semibold">Product</th>
+                <th class="px-3 py-2 text-right font-semibold">Unit Price</th>
+                <th class="px-3 py-2 text-left font-semibold" style="width: 160px">Qty</th>
+                <th class="px-3 py-2 text-right font-semibold">Total</th>
+                <th class="px-3 py-2 text-right font-semibold" style="width: 70px">Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr
+                *ngFor="let row of itemsArray.controls; let i = index"
+                [formGroupName]="i"
+                class="border-t border-surface-200 dark:border-surface-800"
+              >
+                <td class="px-3 py-2">
+                  <p-select
+                    [inputId]="'productId_' + i"
+                    appendTo="body"
+                    formControlName="productId"
+                    [options]="products()"
+                    optionLabel="display"
+                    optionValue="productId"
+                    [filter]="true"
+                    filterBy="display"
+                    (onChange)="onProductChange(i, $event.value)"
+                    [disabled]="!formGroup.get('customerId')?.value"
+                    fluid
+                  />
+                </td>
+
+                <td class="px-3 py-2 text-right font-semibold">
+                  {{ row.get('unitPrice')?.value !== null && row.get('unitPrice')?.value !== undefined
+                    ? formatCurrency(row.get('unitPrice')?.value)
+                    : '-' }}
+                </td>
+
+                <td class="px-3 py-2">
+                  <p-inputNumber
+                    [inputId]="'orderQty_' + i"
+                    formControlName="orderQty"
+                    [min]="1"
+                    [useGrouping]="false"
+                    [disabled]="!formGroup.get('customerId')?.value"
+                    fluid
+                  />
+                </td>
+
+                <td class="px-3 py-2 text-right font-semibold">
+                  {{ row.get('lineTotal')?.value ? formatCurrency(row.get('lineTotal')?.value) : '-' }}
+                </td>
+
+                <td class="px-3 py-2 text-right">
+                  <p-button
+                    icon="pi pi-trash"
+                    severity="danger"
+                    [text]="true"
+                    [rounded]="true"
+                    (click)="removeItemRow(i)"
+                    [disabled]="itemsArray.length <= 1"
+                  />
+                </td>
+              </tr>
+            </tbody>
+
+            <tfoot>
+              <tr class="border-t border-surface-200 bg-surface-50 dark:border-surface-800 dark:bg-surface-900">
+                <td class="px-3 py-2 text-left font-semibold" colspan="2">Total Qty: {{ createTotalQty() }}</td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2 text-right font-semibold">{{ formatCurrency(createTotalAmount()) }}</td>
+                <td class="px-3 py-2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </form>
+
+    <ng-template #footer>
+      <p-button label="Cancel" severity="secondary" [outlined]="true" (click)="onHideCreateDialog()" />
+      <p-button
+        [label]="createDialogMode === 'edit' ? 'Update' : 'Save'"
+        severity="primary"
+        (click)="submitOrder(false)"
+        [loading]="createSubmitting()"
+        [disabled]="createSubmitting()"
+      />
+      <p-button
+        [label]="createDialogMode === 'edit' ? 'Update &amp; Forward' : 'Save &amp; Forward'"
+        severity="primary"
+        [outlined]="true"
+        (click)="submitOrder(true)"
+        [loading]="createSubmitting()"
+        [disabled]="createSubmitting()"
+      />
+    </ng-template>
+
+  </p-dialog>
+  
+
+</div>
